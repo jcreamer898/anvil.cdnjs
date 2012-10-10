@@ -1,0 +1,20 @@
+{
+  "name": "anvil.cdnjs",
+  "version": "0.0.1",
+  "description": "Install packages from cdnjs.",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/jcreamer898/anvil.cdnjs.git"
+  },
+  "main": "./lib/plugin.js",
+  "keywords": [
+    "anvil",
+    "cdnjs",
+    "plugin"
+  ],
+  "author": "Jonathan Creamer",
+  "license": "MIT",
+  "dependencies": {
+    "request": "*"
+  }
+}
