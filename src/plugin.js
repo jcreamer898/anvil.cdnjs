@@ -56,11 +56,13 @@ var pluginFactory = function(_, anvil) {
                         return lib.name === this.packageName;
                     }.bind(this));
 
-                    if( !pkg ) {
-                        anvil.log.warning( "anvil.cdnjs: No library with named: " + this.packageName + " exists on cdnjs." );
+                    if( typeof pkg === "undefined" ) {
+                        anvil.log.error( "anvil.cdnjs: No library with named: " + this.packageName + " exists on cdnjs." );
+						anvil.raise( "all.stop", 0 );
                         done();
+						return;
                     }
-
+					
                     url = this.baseUrl + pkg.name + "/" + pkg.version + "/" + pkg.filename;
                     this.pkg = pkg;
 
@@ -80,6 +82,7 @@ var pluginFactory = function(_, anvil) {
                     _.each( pkg, function( p ) {
                         anvil.log.complete( p.name );
                     });
+					anvil.raise( "all.stop", 0 );
                     done();
                 }
                 else {
@@ -105,6 +108,7 @@ var pluginFactory = function(_, anvil) {
                     anvil.log.complete( this.pkg.filename + " has been installed to " + target );
 
                     done();
+					anvil.raise( "all.stop", 0 );
                 }.bind( this ));
 
             }.bind( this ));
