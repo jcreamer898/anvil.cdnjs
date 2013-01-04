@@ -17,21 +17,23 @@ var pluginFactory = function(_, anvil) {
         url: "http://cdnjs.com/packages.json",
         packageName: "",
         config: {
-            output: "ext"
+            output: "src/vendor"
         },
         baseUrl: "http://cdnjs.cloudflare.com/ajax/libs/",
         // Configure all the things...
         configure: function( config, command, done ) {
 
-            if( command["cdnjs:install"] ) {
-                this.packageName = command[ "cdnjs:install" ];
+            if( command[ "cdnjs:install" ] ) {
+                this.config.packageName = command[ "cdnjs:install" ];
+                this.command = "install";
             }
 
-            if( command["cdnjs:search"] ) {
-                this.search = command[ "cdnjs:search" ];
+            else if( command[ "cdnjs:search" ] ) {
+                this.query = command[ "cdnjs:search" ];
+                this.command = "search";
             }
 
-            if( command["output"] ) {
+            if( command[ "output" ] ) {
                 this.config.output = command[ "output" ];
             }
 
@@ -39,13 +41,12 @@ var pluginFactory = function(_, anvil) {
         },
         // Run all the things...
         run: function( done ) {
-            var libs, pkg, url;
+            var pkg, url;
             
-            if ( !this.search && !this.packageName ) {
+            if ( !this.query && !this.config.packageName ) {
                 done();
                 return;
             }
-            
 
             request( this.url, function( err, response, body ) {
                 if( err || response.statusCode !== 200 ) {
@@ -53,42 +54,10 @@ var pluginFactory = function(_, anvil) {
                     done();
                 }
 
-                libs = JSON.parse( body ).packages;
+                this.libs = JSON.parse( body ).packages;
 
-                if ( this.packageName ) {
-                    pkg = _.find( libs, function(lib) {
-                        return lib.name === this.packageName;
-                    }.bind(this));
-
-                    if( typeof pkg === "undefined" ) {
-                        anvil.log.error( "anvil.cdnjs: No library with named: " + this.packageName + " exists on cdnjs." );
-                        anvil.raise( "all.stop", 0 );
-                        done();
-                        return;
-                    }
-                    
-                    url = this.baseUrl + pkg.name + "/" + pkg.version + "/" + pkg.filename;
-                    this.pkg = pkg;
-                    this.pkg.url = url;
-
-                    request( url, function( err, response, body ) {
-                        this.getPkg( err, response, body, done );
-                    }.bind( this ));
-
-                }
-                else if ( this.search ) {
-                    pkg = _.filter( libs, function( lib ) {
-                        if( !lib.name ) {
-                            return;
-                        }
-                        return lib.name === this.search || ~lib.name.indexOf(this.search);
-                    }.bind( this ));
-
-                    _.each( pkg, function( p ) {
-                        anvil.log.complete( p.name );
-                    });
-                    anvil.raise( "all.stop", 0 );
-                    done();
+                if ( this[ this.command ] ) {
+                    this[ this.command ].call( this, done );
                 }
                 else {
                     done();
@@ -96,36 +65,173 @@ var pluginFactory = function(_, anvil) {
 
             }.bind( this ));
         },
-        getPkg: function( err, response, body, done ) {
+        install: function( done ) {
+            var pkg, url, packages = [];
+
+            // Needs to be explicitly true, basically means they left out the package name.
+            if ( this.config.packageName === true ) {
+                _.each( this.config.libs, function( pkg, libName ) {
+                    var cdnjsPackage = _.find( this.libs, function( cdnjsLib ) {
+                        return cdnjsLib.name === libName;
+                    });
+                    if ( cdnjsPackage ) {
+                        packages.push( cdnjsPackage );
+                    }
+                }.bind( this ));
+
+                if ( packages.length ) {
+                    anvil.scheduler.parallel( packages, this.installPackage, function() {
+                        anvil.log.complete( "anvil.cdnjs: libraries installed" );
+                        anvil.raise( "all.stop", 0 );
+                        done();
+                    });
+                }
+                else {
+                    anvil.log.error( "anvil.cdnjs: No libaries present in config are available on cdnjs" );
+                    anvil.raise( "all.stop", 0 );
+                    done();
+                }
+            }
+            else if ( this.config.packageName ) {
+                pkg = _.find( this.libs, function(lib) {
+                    return lib.name === this.config.packageName;
+                }.bind(this));
+
+                this.installPackage( pkg, function() {
+                    anvil.raise( "all.stop", 0 );
+                    done();
+                });
+            }
+        },
+        installPackage: function( pkg, done ) {
+            var url;
+
+            if( typeof pkg === "undefined" ) {
+                anvil.log.error( "anvil.cdnjs: No library with named: " + this.config.packageName + " exists on cdnjs." );
+                anvil.raise( "all.stop", 0 );
+                done();
+                return;
+            }
+            
+            url = this.baseUrl + pkg.name + "/" + pkg.version + "/" + pkg.filename;
+            pkg.url = url;
+
+            request( url, function( err, response, body ) {
+                this.getPkg( err, body, pkg, done );
+            }.bind( this ));
+        },
+        search: function( done ) {
+            var pkg;
+
+            pkg = _.filter( this.libs, function( lib ) {
+                if( !lib.name ) {
+                    return;
+                }
+                return lib.name === this.query || ~lib.name.indexOf(this.query);
+            }.bind( this ));
+
+            _.each( pkg, function( p ) {
+                anvil.log.complete( p.name );
+            });
+            anvil.raise( "all.stop", 0 );
+            done();
+        },
+        getPkg: function( err, body, pkg, done ) {
             var target;
             anvil.fs.ensurePath( this.config.output, function( err ) {
                 if( err ) {
-                    anvil.log.error( err );
+                    anvil.log.error( "anvil.cdnjs:" + err );
                     done();
                 }
-                target = this.config.output + "/" + this.pkg.filename;
+                target = anvil.fs.buildPath( [ this.config.output, pkg.filename ] );
+
                 anvil.fs.write( target, body, function( err) {
                     if( err ) {
-                        anvil.log.error( err );
+                        anvil.log.error( "anvil.cdnjs:" + err );
                         done();
                     }
 
-                    anvil.log.complete( this.pkg.filename + " has been installed to " + target );
-                    
-                    if ( !this.config[ this.pkg.filename ] ) {
-                        this.config[ this.pkg.filename ] = {};
+                    anvil.log.complete( pkg.filename + " has been installed to " + target );
+
+                    if ( !anvil.fs.pathExists( "./build.json" ) ) {
+                        anvil.fs.write( "./build.json", "{}", function()  {
+                            this.updateBuild( pkg, done );
+                        }.bind(this));
                     }
 
-                    this.config[ this.pkg.filename ][ "version" ] = this.pkg.version;
-                    this.config[ this.pkg.filename ][ "url" ] = this.pkg.url;
+                    this.updateBuild( pkg, done );
+                }.bind( this )); // anvil.fs.write
+            }.bind( this )); // anvil.fs.ensurePath
+        },
+        compareVersion: function( a, b ) {
+            var a_components = a.split("."),
+                b_components = b.split("."),
+                len, i;
 
-                    
+            if ( a === b ) {
+               return 0;
+            }
 
-                    done();
-                    anvil.raise( "all.stop", 0 );
-                }.bind( this ));
+            len = Math.min( a_components.length, b_components.length );
 
-            }.bind( this ));
+            // loop while the components are equal
+            for ( i = 0; i < len; i++ ) {
+                // A bigger than B
+                if ( +a_components[ i ] > +b_components[ i ] ) {
+                    return 1;
+                }
+
+                // B bigger than A
+                if ( +a_components[ i ] < +b_components[ i ] )
+                {
+                    return -1;
+                }
+            }
+
+            // If one's a prefix of the other, the longer one is greater.
+            if ( a_components.length > b_components.length ) {
+                return 1;
+            }
+
+            if ( a_components.length < b_components.length ) {
+                return -1;
+            }
+
+            // Otherwise they are the same.
+            return 0;
+        },
+        updateBuild: function( pkg, done ) {
+            anvil.fs.transform( "./build.json", function( contents, transform ) {
+                var build = JSON.parse( contents ),
+                    libs, buildPkg;
+
+                libs = (build[ "anvil.cdnjs" ] = build[ "anvil.cdnjs" ] || {
+                    libs: {}
+                }).libs;
+
+                buildPkg = libs[ pkg.name ] = libs[ pkg.name ] || {};
+
+                // If the current version is older than the version being installed.
+                if (  _.isEmpty( buildPkg ) ||
+                    ( buildPkg.version && this.compareVersion( pkg.version, buildPkg.version ) === 1 ) ) {
+                    if ( !_.isEmpty( buildPkg ) ) {
+                        buildPkg.history = buildPkg.history || [];
+
+                        buildPkg.history.push({
+                            version: pkg.version,
+                            url: pkg.url
+                        });
+                    }
+
+                    buildPkg.version = pkg.version;
+                    buildPkg.url = pkg.url;
+                }
+
+                transform( JSON.stringify( build, null, 4 ) );
+            }.bind( this ), "./build.json", function() {
+                // All done...
+                done();
+            }.bind( this )); // anvil.fs.transform
         }
     });
 };
