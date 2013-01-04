@@ -1,6 +1,6 @@
 {
   "name": "anvil.cdnjs",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Install packages from cdnjs.",
   "repository": {
     "type": "git",
