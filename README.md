@@ -1,7 +1,7 @@
 anvil.cdnjs
 ===========
 
-anvil.js plugin for installing files from cdnjs
+anvil.js plugin for installing files from cdnjs. [Click here](http://www.screenr.com/PCA7) see it in action, here's 
 
 To install, run...
 
@@ -24,7 +24,7 @@ There are two ways to install a library.
 One way is to install them individually by running...
 
 ```bash
-anvil --cdnjs:install jquery
+anvil --cdnjs:install [packageName]
 ```
 
 The other way is by working with the `build.json` file.
