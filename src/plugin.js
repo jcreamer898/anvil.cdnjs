@@ -10,11 +10,15 @@ var pluginFactory = function(_, anvil) {
         commander: [
             ["--cdnjs:install [name]", "Install a cdnjs file."],
             ["--cdnjs:search [name]", "Install a cdnjs file."],
+            ["--cdnjs:update [name]", "Update a cdnjs file."],
+            ["-v [version]", "The version of the cdnjs package to install" ],
             ["-o, --output [output]", "Output directory."]
         ],
         url: "http://cdnjs.com/packages.json",
         packageName: "",
-        output: "ext",
+        config: {
+            output: "ext"
+        },
         baseUrl: "http://cdnjs.cloudflare.com/ajax/libs/",
         // Configure all the things...
         configure: function( config, command, done ) {
@@ -28,7 +32,7 @@ var pluginFactory = function(_, anvil) {
             }
 
             if( command["output"] ) {
-                this.output = command[ "output" ];
+                this.config.output = command[ "output" ];
             }
 
             done();
@@ -58,13 +62,14 @@ var pluginFactory = function(_, anvil) {
 
                     if( typeof pkg === "undefined" ) {
                         anvil.log.error( "anvil.cdnjs: No library with named: " + this.packageName + " exists on cdnjs." );
-						anvil.raise( "all.stop", 0 );
+                        anvil.raise( "all.stop", 0 );
                         done();
-						return;
+                        return;
                     }
-					
+                    
                     url = this.baseUrl + pkg.name + "/" + pkg.version + "/" + pkg.filename;
                     this.pkg = pkg;
+                    this.pkg.url = url;
 
                     request( url, function( err, response, body ) {
                         this.getPkg( err, response, body, done );
@@ -82,7 +87,7 @@ var pluginFactory = function(_, anvil) {
                     _.each( pkg, function( p ) {
                         anvil.log.complete( p.name );
                     });
-					anvil.raise( "all.stop", 0 );
+                    anvil.raise( "all.stop", 0 );
                     done();
                 }
                 else {
@@ -93,12 +98,12 @@ var pluginFactory = function(_, anvil) {
         },
         getPkg: function( err, response, body, done ) {
             var target;
-            anvil.fs.ensurePath( this.output, function( err ) {
+            anvil.fs.ensurePath( this.config.output, function( err ) {
                 if( err ) {
                     anvil.log.error( err );
                     done();
                 }
-                target = this.output + "/" + this.pkg.filename;
+                target = this.config.output + "/" + this.pkg.filename;
                 anvil.fs.write( target, body, function( err) {
                     if( err ) {
                         anvil.log.error( err );
@@ -106,9 +111,18 @@ var pluginFactory = function(_, anvil) {
                     }
 
                     anvil.log.complete( this.pkg.filename + " has been installed to " + target );
+                    
+                    if ( !this.config[ this.pkg.filename ] ) {
+                        this.config[ this.pkg.filename ] = {};
+                    }
+
+                    this.config[ this.pkg.filename ][ "version" ] = this.pkg.version;
+                    this.config[ this.pkg.filename ][ "url" ] = this.pkg.url;
+
+                    
 
                     done();
-					anvil.raise( "all.stop", 0 );
+                    anvil.raise( "all.stop", 0 );
                 }.bind( this ));
 
             }.bind( this ));
